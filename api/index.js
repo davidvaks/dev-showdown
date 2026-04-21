@@ -1,4 +1,4 @@
-const { ask, askStructured, z } = require("../lib/llm");
+const { ask, askStructured, askWithTools, tool, z } = require("../lib/llm");
 
 async function handleHelloWorld(body) {
   const { name } = body;
@@ -45,10 +45,54 @@ async function handleJsonMode(body, interactionId) {
   });
 }
 
+async function handleBasicToolCall(body, interactionId) {
+  const { question } = body;
+
+  const getWeather = tool({
+    description: "Get the current weather for a city",
+    parameters: z.object({ city: z.string() }),
+    execute: async ({ city }) => {
+      const res = await fetch("https://devshowdown.com/api/weather", {
+        method: "POST",
+        headers: {
+          "X-Interaction-Id": interactionId,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ city }),
+      });
+      return res.json();
+    },
+  });
+
+  const result = await askWithTools(question, { getWeather }, {
+    system: "You answer weather questions. Use the getWeather tool to look up current weather, then respond with a natural language answer that includes the temperature.",
+    interactionId,
+  });
+
+  if (result.text) {
+    return { answer: result.text };
+  }
+
+  const toolResult = result.steps
+    ?.flatMap((s) => s.toolResults || [])
+    .find((r) => r.toolName === "getWeather");
+
+  if (toolResult?.result) {
+    const answer = await ask(
+      `The user asked: "${question}"\nWeather data: ${JSON.stringify(toolResult.result)}\nRespond naturally, include the temperature.`,
+      { interactionId },
+    );
+    return { answer };
+  }
+
+  return { answer: "Unable to fetch weather data." };
+}
+
 const handlers = {
   HELLO_WORLD: handleHelloWorld,
   BASIC_LLM: handleBasicLlm,
   JSON_MODE: handleJsonMode,
+  BASIC_TOOL_CALL: handleBasicToolCall,
 };
 
 module.exports = async (req, res) => {
