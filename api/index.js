@@ -1,4 +1,4 @@
-const { ask } = require("../lib/llm");
+const { ask, askStructured, z } = require("../lib/llm");
 
 async function handleHelloWorld(body) {
   const { name } = body;
@@ -14,9 +14,41 @@ async function handleBasicLlm(body, interactionId) {
   return { answer };
 }
 
+const productSchema = z.object({
+  name: z.string(),
+  price: z.number(),
+  currency: z.string(),
+  inStock: z.boolean(),
+  dimensions: z.object({
+    length: z.number(),
+    width: z.number(),
+    height: z.number(),
+    unit: z.string(),
+  }),
+  manufacturer: z.object({
+    name: z.string(),
+    country: z.string(),
+    website: z.string(),
+  }),
+  specifications: z.object({
+    weight: z.number(),
+    weightUnit: z.string(),
+    warrantyMonths: z.number().int(),
+  }),
+});
+
+async function handleJsonMode(body, interactionId) {
+  const { description } = body;
+  return askStructured(description, productSchema, {
+    system: "Extract structured product information from the description. Return all fields exactly as described in the text.",
+    interactionId,
+  });
+}
+
 const handlers = {
   HELLO_WORLD: handleHelloWorld,
   BASIC_LLM: handleBasicLlm,
+  JSON_MODE: handleJsonMode,
 };
 
 module.exports = async (req, res) => {
